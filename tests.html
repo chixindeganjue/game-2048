@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>2048 引擎测试</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 28px 20px 60px;
+    background: #14111b;
+    color: #ece6f5;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    line-height: 1.55;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .04em; }
+  .sub { color: #9c93ad; font-size: 13px; margin: 0 0 18px; }
+  .summary {
+    display: inline-block;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: #2a2338;
+    border: 1px solid #3c3450;
+    margin-bottom: 18px;
+  }
+  .summary.pass { background: #173a2b; border-color: #2a6b4c; color: #8ff0bd; }
+  .summary.fail { background: #3d1a22; border-color: #7a3040; color: #ff9fb2; }
+  ol { margin: 0; padding-left: 22px; max-width: 760px; }
+  li { padding: 5px 0; border-bottom: 1px solid #241e31; font-size: 14px; }
+  li .tag { display: inline-block; min-width: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  li.ok .tag { color: #5cd39a; }
+  li.bad .tag { color: #ff7b93; }
+  li.bad { color: #ffd2da; }
+  .err { display: block; color: #ff9fb2; font-size: 12.5px; word-break: break-word; }
+  .hidden { display: none; }
+  a { color: #9dc4ff; }
+</style>
+</head>
+<body>
+<h1>2048 引擎测试</h1>
+<p class="sub">直接打开本页即可运行；全部通过时标题为 <code>TESTS: n passed, 0 failed</code>。<a href="index.html">返回游戏</a></p>
+<div id="summary" class="summary">运行中…</div>
+<div id="details" class="hidden">
+  <ol id="results"></ol>
+</div>
+
+<script src="game-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.Game2048Core;
+  var results = [];
+  var assertions = 0;
+
+  function fail(message) {
+    throw new Error(message);
+  }
+  function assert(condition, message) {
+    assertions += 1;
+    if (!condition) {
+      fail(message || '断言失败');
+    }
+  }
+  function same(actual, expected) {
+    return JSON.stringify(actual) === JSON.stringify(expected);
+  }
+  function assertSame(actual, expected, message) {
+    assert(
+      same(actual, expected),
+      (message || '') + ' 期望 ' + JSON.stringify(expected) + '，实得 ' + JSON.stringify(actual)
+    );
+  }
+  function test(name, fn) {
+    try {
+      fn();
+      results.push({ name: name, ok: true });
+    } catch (error) {
+      results.push({ name: name, ok: false, error: error.message });
+    }
+  }
+
+  /** 固定随机数：0.1 → 取第一个空位、生成 2。 */
+  function rng(value) {
+    return function () {
+      return arguments.length ? value : value;
+    };
+  }
+
+  /** 用数值棋盘走一步，返回 state / 结果 / 去掉新生成方块后的棋盘。 */
+  function play(values, dir, randomValue) {
+    var state = C.fromValues(values, { rng: rng(randomValue === undefined ? 0.1 : randomValue) });
+    var result = C.move(state, dir);
+    var board = C.valuesOf(state.grid);
+    if (result.spawned) {
+      board[result.spawned.r][result.spawned.c] = 0;
+    }
+    return { state: state, result: result, board: board };
+  }
+
+  function countTiles(grid) {
+    var total = 0;
+    for (var r = 0; r < grid.length; r++) {
+      for (var c = 0; c < grid[r].length; c++) {
+        if (grid[r][c]) {
+          total += 1;
+        }
+      }
+    }
+    return total;
+  }
+
+  function zeros() {
+    return [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+  }
+
+  function withRow0(row) {
+    var values = zeros();
+    values[0] = row;
+    return values;
+  }
+
+  test('初始棋盘恰好两个方块，总值为 4 或 8', function () {
+    for (var i = 0; i < 40; i++) {
+      var state = C.createGame({ rng: Math.random });
+      var values = C.valuesOf(state.grid);
+      assert(countTiles(state.grid) === 2, '初始方块数应为 2，实得 ' + countTiles(state.grid));
+      var sum = 0;
+      values.forEach(function (row) {
+        row.forEach(function (value) {
+          sum += value;
+          assert(value === 0 || value === 2 || value === 4, '初始值只能为 2/4，实得 ' + value);
+        });
+      });
+      assert(sum === 4 || sum === 6 || sum === 8, '初始总值应为 4/6/8，实得 ' + sum);
+      assert(state.score === 0 && state.status === 'playing' && state.history.length === 0, '初始状态不对');
+    }
+  });
+
+  test('左移：[2,2,0,0] → [4,0,0,0]，得分 4', function () {
+    var out = play(withRow0([2, 2, 0, 0]), 'left');
+    assertSame(out.board[0], [4, 0, 0, 0], '[2,2,0,0] 左移');
+    assert(out.result.moved === true, '应判定为移动');
+    assert(out.result.gained === 4, '得分应为 4，实得 ' + out.result.gained);
+    assert(out.state.score === 4, '总分应为 4');
+  });
+
+  test('同一步内每个方块只合并一次：[2,2,2,2] → [4,4,0,0]', function () {
+    var out = play(withRow0([2, 2, 2, 2]), 'left');
+    assertSame(out.board[0], [4, 4, 0, 0], '[2,2,2,2] 左移');
+    assert(out.result.gained === 8, '得分应为 8，实得 ' + out.result.gained);
+  });
+
+  test('[4,4,2,2] 左移 → [8,4,0,0]，得分 12', function () {
+    var out = play(withRow0([4, 4, 2, 2]), 'left');
+    assertSame(out.board[0], [8, 4, 0, 0], '[4,4,2,2] 左移');
+    assert(out.result.gained === 12, '得分应为 12，实得 ' + out.result.gained);
+  });
+
+  test('[2,2,2] 左移 → [4,2,0,0]，不连锁', function () {
+    var out = play(withRow0([2, 2, 2, 0]), 'left');
+    assertSame(out.board[0], [4, 2, 0, 0], '[2,2,2] 左移');
+    assert(out.result.gained === 4, '得分应为 4');
+  });
+
+  test('[2,0,2,2] 左移 → [4,2,0,0]', function () {
+    var out = play(withRow0([2, 0, 2, 2]), 'left');
+    assertSame(out.board[0], [4, 2, 0, 0], '[2,0,2,2] 左移');
+  });
+
+  test('无变化的移动：不生成方块、不记历史、不加步数', function () {
+    var state = C.fromValues(withRow0([2, 4, 2, 4]), { rng: rng(0.1) });
+    var before = C.valuesOf(state.grid);
+    var result = C.move(state, 'left');
+    assert(result.moved === false, '应判定为未移动');
+    assertSame(C.valuesOf(state.grid), before, '棋盘不应改变');
+    assert(state.history.length === 0, '不应写入历史');
+    assert(state.moves === 0, '不应增加步数');
+    assert(state.score === 0, '不应加分');
+    assert(C.undo(state) === false, '空历史撤销应返回 false');
+  });
+
+  test('贴边落位：[0,0,0,2] 左移 → [2,0,0,0]', function () {
+    var out = play(withRow0([0, 0, 0, 2]), 'left');
+    assertSame(out.board[0], [2, 0, 0, 0], '贴边左移');
+  });
+
+  test('四个方向移动一致', function () {
+    var values = [
+      [2, 0, 0, 2],
+      [2, 0, 0, 2],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0]
+    ];
+    var up = play(values, 'up');
+    assertSame(up.board[0], [4, 0, 0, 4], '上移');
+    assertSame(up.board[1], [0, 0, 0, 0], '上移第二行');
+
+    var down = play(values, 'down');
+    assertSame(down.board[3], [4, 0, 0, 4], '下移');
+
+    var left = play(values, 'left');
+    assertSame(left.board[0], [4, 0, 0, 0], '左移第一行');
+    assertSame(left.board[1], [4, 0, 0, 0], '左移第二行');
+
+    var right = play(values, 'right');
+    assertSame(right.board[0], [0, 0, 0, 4], '右移第一行');
+    assertSame(right.board[1], [0, 0, 0, 4], '右移第二行');
+  });
+
+  test('每次有效移动只生成一个方块，落在空位且值为 2 或 4', function () {
+    var state = C.createGame({ rng: rng(0.5) });
+    var before = countTiles(state.grid);
+    var result = C.move(state, 'left');
+    if (!result.moved) {
+      // 初始随机盘可能无法左移：换一个方向再试，保证有移动再断言
+      ['right', 'up', 'down'].some(function (dir) {
+        result = C.move(state, dir);
+        return result.moved;
+      });
+    }
+    assert(result.moved === true, '应至少有一个方向可以移动');
+    assert(countTiles(state.grid) === before + 1, '应只增加一个方块');
+    assert(result.spawned && (result.spawned.value === 2 || result.spawned.value === 4), '生成值应为 2 或 4');
+    var cell = state.grid[result.spawned.r][result.spawned.c];
+    assert(cell && cell.id === result.spawned.id, '生成方块应落在返回的坐标上');
+  });
+
+  test('无移动方向不生成方块（满盘无可合并）', function () {
+    var values = [
+      [2, 4, 2, 4],
+      [4, 2, 4, 2],
+      [2, 4, 2, 4],
+      [4, 2, 4, 2]
+    ];
+    var state = C.fromValues(values, { rng: rng(0.1) });
+    var result = C.move(state, 'left');
+    assert(result.moved === false, '满盘交叉棋不应有移动');
+    assert(countTiles(state.grid) === 16, '棋盘不应改变');
+  });
+
+  test('canMove：空位 / 可合并 / 死局', function () {
+    assert(C.canMove(C.gridFromValues(withRow0([2, 0, 0, 0]))) === true, '有空位应可移动');
+    assert(C.canMove(C.gridFromValues([
+      [2, 2, 4, 8],
+      [4, 8, 16, 32],
+      [8, 16, 32, 64],
+      [16, 32, 64, 128]
+    ])) === true, '相邻同值应可移动');
+    assert(C.canMove(C.gridFromValues([
+      [2, 4, 2, 4],
+      [4, 2, 4, 2],
+      [2, 4, 2, 4],
+      [4, 2, 4, 2]
+    ])) === false, '无空位且无相邻同值应判定死局');
+  });
+
+  test('得分累加并刷新最高分、写入存储', function () {
+    var store = {
+      data: {},
+      get: function (key) { return this.data[key] === undefined ? null : this.data[key]; },
+      set: function (key, value) { this.data[key] = value; }
+    };
+    var state = C.fromValues(withRow0([2, 2, 2, 2]), { score: 100, best: 100, rng: rng(0.1), storage: store });
+    C.move(state, 'left');
+    assert(state.score === 108, '得分应为 108，实得 ' + state.score);
+    assert(state.best === 108, '最高分应为 108，实得 ' + state.best);
+    assert(store.get(C.BEST_KEY) === '108', '最高分应写入存储');
+    C.undo(state);
+    assert(state.score === 100, '撤销后得分应回到 100');
+    assert(C.fromValues(withRow0([2, 2, 0, 0]), { storage: store }).best === 108, '新一局应读到 108');
+  });
+
+  test('撤销恢复棋盘、得分与状态，最多保留 20 步', function () {
+    var state = C.fromValues([
+      [0, 2, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0]
+    ], { rng: rng(0.1) });
+    var original = C.valuesOf(state.grid);
+    C.move(state, 'left');
+    assert(state.history.length === 1, '应记录一步历史');
+    assert(C.undo(state) === true, '撤销应成功');
+    assertSame(C.valuesOf(state.grid), original, '撤销应恢复原棋盘');
+    assert(state.score === 0 && state.moves === 0, '撤销应恢复分数与步数');
+    assert(C.undo(state) === false, '历史用完应返回 false');
+
+    var longState = C.fromValues([
+      [2, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0]
+    ], { rng: rng(0.1) });
+    for (var i = 0; i < 40; i++) {
+      if (!C.move(longState, i % 2 ? 'left' : 'right').moved) {
+        break;
+      }
+    }
+    assert(longState.history.length <= C.HISTORY_LIMIT, '历史不应超过 ' + C.HISTORY_LIMIT + ' 步');
+  });
+
+  test('达成 2048：弹出胜利且只触发一次，继续后可正常移动', function () {
+    var state = C.fromValues([
+      [1024, 1024, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0],
+      [0, 0, 0, 0]
+    ], { rng: rng(0.1) });
+    var result = C.move(state, 'left');
+    assert(result.moved === true, '应发生移动');
+    assert(state.grid[0][0].value === 2048, '左上角应合并出 2048');
+    assert(state.status === 'won' && state.won === true, '应进入胜利状态');
+    assert(C.continueGame(state) === 'playing', '继续挑战后应回到可玩状态');
+    C.move(state, 'right');
+    assert(state.status === 'playing', '胜利只应触发一次，不应再次弹出');
+  });
+
+  test('无路可走时进入结束状态', function () {
+    var values = [
+      [2, 4, 8, 16],
+      [32, 64, 128, 256],
+      [2, 4, 8, 16],
+      [32, 64, 128, 128]
+    ];
+    var state = C.fromValues(values, { rng: rng(0.1) });
+    assert(state.status === 'playing', '仍可移动时应处于可玩状态');
+    var result = C.move(state, 'left');
+    assert(result.moved === true, '应发生移动');
+    assert(state.status === 'over', '走完后无路可走应结束，实得 ' + state.status);
+    assert(C.move(state, 'left').moved === false, '结束后不应再接受移动');
+  });
+
+  test('新游戏重置棋盘与分数、保留最高分', function () {
+    var state = C.fromValues(withRow0([2, 2, 0, 0]), { score: 64, best: 4096, rng: rng(0.1) });
+    C.move(state, 'left');
+    C.resetGame(state);
+    assert(state.score === 0 && state.moves === 0 && state.status === 'playing', '新游戏应重置分数/步数/状态');
+    assert(state.history.length === 0, '新游戏应清空历史');
+    assert(state.best === 4096, '最高分应保留');
+    assert(countTiles(state.grid) === 2, '新游戏应有两个初始方块');
+  });
+
+  test('非法输入（方向、空状态）安全返回', function () {
+    var state = C.fromValues(withRow0([2, 2, 0, 0]), { rng: rng(0.1) });
+    assert(C.move(state, 'diagonal').moved === false, '非法方向应返回未移动');
+    assert(C.move(null, 'left').moved === false, '空状态应安全返回');
+    assert(C.undo(null) === false, '空状态撤销应安全返回');
+    assert(C.continueGame(null) === 'playing', '空状态继续应安全返回');
+  });
+
+  var passed = 0;
+  var failed = 0;
+  var list = document.getElementById('results');
+  results.forEach(function (item) {
+    var li = document.createElement('li');
+    li.className = item.ok ? 'ok' : 'bad';
+    var tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = item.ok ? 'PASS' : 'FAIL';
+    li.appendChild(tag);
+    li.appendChild(document.createTextNode(item.name));
+    if (!item.ok) {
+      var err = document.createElement('span');
+      err.className = 'err';
+      err.textContent = item.error;
+      li.appendChild(err);
+      failed += 1;
+    } else {
+      passed += 1;
+    }
+    list.appendChild(li);
+  });
+
+  var summary = document.getElementById('summary');
+  summary.textContent = 'TESTS: ' + passed + ' passed, ' + failed + ' failed（' + assertions + ' 条断言）';
+  summary.className = 'summary ' + (failed ? 'fail' : 'pass');
+  document.getElementById('details').className = '';
+  document.title = 'TESTS: ' + passed + ' passed, ' + failed + ' failed';
+  document.body.setAttribute('data-tests-passed', String(passed));
+  document.body.setAttribute('data-tests-failed', String(failed));
+})();
+</script>
+</body>
+</html>
