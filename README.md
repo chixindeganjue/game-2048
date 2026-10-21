@@ -47,6 +47,9 @@
 
 本项目是纯静态页面，推到 GitHub 后由 Pages 托管，**不需要构建、不需要服务器**。
 
+- 仓库地址：<https://github.com/chixindeganjue/game-2048>
+- 启用 Pages 后的访问地址：<https://chixindeganjue.github.io/game-2048/>
+
 ### 1. 推到 GitHub
 
 ```bash
@@ -70,7 +73,7 @@ git push -u origin main
 
 ### 3. 上线后验收
 
-- 打开 `https://<你的用户名>.github.io/<仓库名>/`（用户站点则不带仓库名）能正常开局、移动、撤销；
+- 打开 <https://chixindeganjue.github.io/game-2048/> 能正常开局、移动、撤销；
 - 用手机蜂窝网络访问一次，确认滑动和屏幕方向键可用；
 - `curl.exe -I https://…/game-core.js` 返回 200，且 `Content-Type` 为 `application/javascript`；
 - 刷新页面后最高分仍在（`localStorage` 按域名隔离，从本地 `file://` 玩出的最高分不会带过来，属正常现象）。
@@ -89,7 +92,7 @@ git push -u origin main
 - `.js` 由 Pages 以正确 MIME 返回，不需要额外配置；
 - `tests.html` 已加 `noindex`，即使随仓库发布也不会进入搜索引擎；若完全不想公开它，可把它移出仓库，或改用 `docs/` 目录只发布游戏文件；
 - GitHub Pages 的免费方案通常要求仓库公开（私有仓库的 Pages 取决于账户套餐）；
-- 分享卡片：`og:title` / `og:description` 已就绪；若想让链接卡片带图，可在部署后把 `og:image` 指向 `https://你的域名/preview.png` 的绝对地址（建议另做一张约 1200×630 的横图），并补上 `og:url`。
+- 分享卡片：`canonical`、`og:url`、`og:image` 已指向 GitHub Pages 地址；如果之后绑定自定义域名，记得把这三处一起改掉。
 
 
 ## 自测
